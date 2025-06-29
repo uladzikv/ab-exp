@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO experiments (id, name, created_at) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6a3209ae7b2d55a2c042ce0ea8934bc32943a2b1ce8584db9323fe1c641d4cff"
+}
