@@ -82,6 +82,12 @@ pub enum GetDeviceByIdError {
     Unknown(#[from] anyhow::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum GetAllDevicesError {
+    #[error(transparent)]
+    Unknown(#[from] anyhow::Error),
+}
+
 #[cfg(test)]
 mod device_id_tests {
     use super::*;

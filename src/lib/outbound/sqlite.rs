@@ -7,7 +7,8 @@ use sqlx::{QueryBuilder, sqlite::SqliteConnectOptions};
 use uuid::Uuid;
 
 use crate::domain::device::models::device::{
-    CreateDeviceError, CreateDeviceRequest, Device, DeviceId, GetDeviceByIdError,
+    CreateDeviceError, CreateDeviceRequest, Device, DeviceId, GetAllDevicesError,
+    GetDeviceByIdError,
 };
 use crate::domain::device::ports::DeviceRepository;
 use crate::domain::experiment::models::experiment::{
@@ -302,6 +303,31 @@ impl ExperimentRepository for Sqlite {
             .collect();
 
         Ok(device_experiments)
+    }
+
+    async fn get_all_devices(&self) -> Result<Vec<Device>, GetAllDevicesError> {
+        let rows = sqlx::query!("SELECT * FROM devices")
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to fetch devices")?;
+
+        let mut devices = Vec::new();
+        for row in rows {
+            let id = Uuid::parse_str(&row.id)
+                .context("invalid UUID format")?
+                .to_string();
+            let created_at = row
+                .created_at
+                .parse()
+                .context("failed to parse created_at as DateTime<Utc>")?;
+
+            let device_id = DeviceId::new(&id).context("failed to create device ID")?;
+
+            let device = Device::new(device_id, created_at);
+            devices.push(device);
+        }
+
+        Ok(devices)
     }
 
     async fn finish_experiment(&self, id: &Uuid) -> Result<Uuid, FinishExperimentError> {

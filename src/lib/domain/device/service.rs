@@ -16,11 +16,6 @@ impl<R: DeviceRepository> Service<R> {
 }
 
 impl<R: DeviceRepository> DeviceService for Service<R> {
-    /// Create the [Device] specified in `req`.
-    ///
-    /// # Errors
-    ///
-    /// - Propagates any [CreateDeviceError] returned by the [DeviceRepository].
     async fn create_device(&self, req: &CreateDeviceRequest) -> Result<Device, CreateDeviceError> {
         self.repo.create_device(req).await
     }

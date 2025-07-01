@@ -8,7 +8,7 @@ use tokio::net;
 use crate::domain::experiment::ports::ExperimentService;
 use crate::inbound::http::handlers::{
     create_experiment::create_experiment, get_experiments::get_experiments,
-    patch_experiment::patch_experiment,
+    get_statistics::get_statistics, patch_experiment::patch_experiment,
 };
 
 mod handlers;
@@ -75,4 +75,5 @@ fn api_routes<ES: ExperimentService>() -> Router<AppState<ES>> {
         .route("/experiments", get(get_experiments))
         .route("/experiments", post(create_experiment))
         .route("/experiments/{id}", patch(patch_experiment))
+        .route("/statistics", get(get_statistics))
 }

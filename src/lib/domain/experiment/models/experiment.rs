@@ -81,6 +81,48 @@ impl Variant {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatisticsVariant {
+    data: VariantData,
+    total_devices: usize,
+    percentage_devices: f64,
+}
+
+impl StatisticsVariant {
+    pub fn new(data: VariantData, total_devices: usize, percentage_devices: f64) -> Self {
+        Self {
+            data,
+            total_devices,
+            percentage_devices,
+        }
+    }
+
+    pub fn data(&self) -> &VariantData {
+        &self.data
+    }
+
+    pub fn total_devices(&self) -> usize {
+        self.total_devices
+    }
+
+    pub fn percentage_devices(&self) -> f64 {
+        self.percentage_devices
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StatisticsVariants(Vec<StatisticsVariant>);
+
+impl StatisticsVariants {
+    pub fn new(variants: Vec<StatisticsVariant>) -> Self {
+        Self(variants)
+    }
+
+    pub fn variants(&self) -> &Vec<StatisticsVariant> {
+        &self.0
+    }
+}
+
 /// Represents always valid list of variants.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExperimentVariants(Vec<Variant>);
@@ -229,6 +271,46 @@ impl DeviceExperiment {
 
     pub fn data(&self) -> &VariantData {
         &self.data
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticticsExperiment {
+    id: Uuid,
+    name: ExperimentName,
+    total_devices: usize,
+    variants: StatisticsVariants,
+}
+
+impl StaticticsExperiment {
+    pub fn new(
+        id: Uuid,
+        name: ExperimentName,
+        total_devices: usize,
+        variants: StatisticsVariants,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            total_devices,
+            variants,
+        }
+    }
+
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+
+    pub fn name(&self) -> &ExperimentName {
+        &self.name
+    }
+
+    pub fn total_devices(&self) -> usize {
+        self.total_devices
+    }
+
+    pub fn variants(&self) -> &StatisticsVariants {
+        &self.variants
     }
 }
 

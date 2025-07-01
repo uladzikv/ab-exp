@@ -2,8 +2,9 @@ use std::future::Future;
 
 #[allow(unused_imports)]
 use crate::domain::device::models::device::DeviceId;
-use crate::domain::device::models::device::{CreateDeviceError, GetDeviceByIdError};
-use crate::domain::device::models::device::{CreateDeviceRequest, Device};
+use crate::domain::device::models::device::{
+    CreateDeviceError, CreateDeviceRequest, Device, GetDeviceByIdError,
+};
 
 /// `DeviceService` is the public API for the device domain.
 pub trait DeviceService: Clone + Send + Sync + 'static {
