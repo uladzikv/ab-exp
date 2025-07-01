@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use axum::Router;
-use axum::routing::post;
+use axum::routing::{get, patch, post};
 use tokio::net;
 
 use crate::domain::experiment::ports::ExperimentService;
-use crate::inbound::http::handlers::create_experiment::create_experiment;
+use crate::inbound::http::handlers::{
+    create_experiment::create_experiment, get_experiments::get_experiments,
+    patch_experiment::patch_experiment,
+};
 
 mod handlers;
 mod responses;
@@ -14,11 +17,13 @@ mod responses;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpServerConfig<'a> {
     pub port: &'a str,
+    pub auth_token: &'a str,
 }
 
 #[derive(Debug, Clone)]
 struct AppState<ES: ExperimentService> {
     experiment_service: Arc<ES>,
+    auth_token: String,
 }
 
 pub struct HttpServer {
@@ -40,6 +45,7 @@ impl HttpServer {
 
         let state = AppState {
             experiment_service: Arc::new(experiment_service),
+            auth_token: config.auth_token.to_string(),
         };
 
         let router = axum::Router::new()
@@ -65,5 +71,8 @@ impl HttpServer {
 }
 
 fn api_routes<ES: ExperimentService>() -> Router<AppState<ES>> {
-    Router::new().route("/experiments", post(create_experiment::<ES>))
+    Router::new()
+        .route("/experiments", get(get_experiments))
+        .route("/experiments", post(create_experiment))
+        .route("/experiments/{id}", patch(patch_experiment))
 }

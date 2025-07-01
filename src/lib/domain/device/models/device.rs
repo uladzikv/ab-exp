@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use derive_more::{Display, From};
@@ -23,20 +24,29 @@ impl DeviceId {
             Err(_) => Err(DeviceIdError(raw_idfa.to_string())),
         }
     }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Device {
     id: DeviceId,
+    created_at: DateTime<Utc>,
 }
 
 impl Device {
-    pub fn new(id: DeviceId) -> Self {
-        Self { id }
+    pub fn new(id: DeviceId, created_at: DateTime<Utc>) -> Self {
+        Self { id, created_at }
     }
 
     pub fn id(&self) -> &DeviceId {
         &self.id
+    }
+
+    pub fn created_at(&self) -> &DateTime<Utc> {
+        &self.created_at
     }
 }
 
@@ -60,6 +70,14 @@ impl CreateDeviceRequest {
 pub enum CreateDeviceError {
     #[error("device with id {id} already exists")]
     Duplicate { id: DeviceId },
+    #[error(transparent)]
+    Unknown(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum GetDeviceByIdError {
+    #[error("device with id {id} not found")]
+    NotFound { id: DeviceId },
     #[error(transparent)]
     Unknown(#[from] anyhow::Error),
 }

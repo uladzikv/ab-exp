@@ -14,6 +14,7 @@ async fn main() -> anyhow::Result<()> {
 
     let server_config = HttpServerConfig {
         port: &config.server_port,
+        auth_token: &config.auth_token,
     };
 
     let http_server = HttpServer::new(experiment_service, server_config).await?;

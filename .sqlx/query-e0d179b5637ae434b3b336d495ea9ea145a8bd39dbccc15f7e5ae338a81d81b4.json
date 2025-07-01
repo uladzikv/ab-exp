@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE experiments SET finished_at = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e0d179b5637ae434b3b336d495ea9ea145a8bd39dbccc15f7e5ae338a81d81b4"
+}

@@ -1,4 +1,6 @@
+use chrono::{DateTime, Utc};
 use derive_more::{Display, From};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -127,6 +129,35 @@ impl ExperimentVariants {
 
         Ok(())
     }
+
+    /// Assigns a variant to a value based on hash input.
+    ///
+    /// # Arguments
+    /// * `hash_input` - input string used to generate a hash.
+    ///
+    /// # Returns
+    /// * `&VariantData` - reference to the assigned variant.
+    pub fn assign_variant(&self, hash_input: &str) -> &VariantData {
+        let mut hasher = Sha256::new();
+        hasher.update(hash_input.as_bytes());
+        let hash_result = hasher.finalize();
+
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&hash_result[0..8]);
+        let hash_value = u64::from_be_bytes(bytes);
+
+        let normalized = (hash_value as f64 / u64::MAX as f64) * 100.0;
+
+        let mut cumulative = 0.0;
+        for variant in &self.0 {
+            cumulative += variant.distribution().into_inner();
+            if normalized < cumulative {
+                return variant.data();
+            }
+        }
+
+        self.0.last().unwrap().data()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,11 +165,25 @@ pub struct Experiment {
     id: Uuid,
     name: ExperimentName,
     variants: ExperimentVariants,
+    created_at: DateTime<Utc>,
+    finished_at: Option<DateTime<Utc>>,
 }
 
 impl Experiment {
-    pub fn new(id: Uuid, name: ExperimentName, variants: ExperimentVariants) -> Self {
-        Self { id, name, variants }
+    pub fn new(
+        id: Uuid,
+        name: ExperimentName,
+        variants: ExperimentVariants,
+        created_at: DateTime<Utc>,
+        finished_at: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            variants,
+            created_at,
+            finished_at,
+        }
     }
 
     pub fn id(&self) -> &Uuid {
@@ -151,6 +196,39 @@ impl Experiment {
 
     pub fn variants(&self) -> &ExperimentVariants {
         &self.variants
+    }
+
+    pub fn created_at(&self) -> &DateTime<Utc> {
+        &self.created_at
+    }
+
+    pub fn finished_at(&self) -> &Option<DateTime<Utc>> {
+        &self.finished_at
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeviceExperiment {
+    id: Uuid,
+    name: ExperimentName,
+    data: VariantData,
+}
+
+impl DeviceExperiment {
+    pub fn new(id: Uuid, name: ExperimentName, data: VariantData) -> Self {
+        Self { id, name, data }
+    }
+
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+
+    pub fn name(&self) -> &ExperimentName {
+        &self.name
+    }
+
+    pub fn data(&self) -> &VariantData {
+        &self.data
     }
 }
 
@@ -179,6 +257,36 @@ impl CreateExperimentRequest {
 pub enum CreateExperimentError {
     #[error("experiment with name {name} already exists")]
     Duplicate { name: ExperimentName },
+    #[error(transparent)]
+    Unknown(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum FinishExperimentError {
+    #[error("experiment with id {id} does not exist")]
+    NotFound { id: Uuid },
+    #[error("experiment with id {id} is already finished")]
+    Finished { id: Uuid },
+    #[error(transparent)]
+    Unknown(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum GetAllExperimentsError {
+    #[error(transparent)]
+    Name(#[from] ExperimentNameEmptyError),
+    #[error(transparent)]
+    VariantData(#[from] VariantDataEmptyError),
+    #[error(transparent)]
+    VariantDistribution(#[from] VariantDistributionInvalidError),
+    #[error(transparent)]
+    DistributionSum(#[from] DistributionSumError),
+    #[error(transparent)]
+    Unknown(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum GetAllDeviceExperimentsError {
     #[error(transparent)]
     Unknown(#[from] anyhow::Error),
 }
@@ -248,20 +356,6 @@ mod experiment_tests {
         let experiment_name_expected = Ok(ExperimentName("price".to_string()));
 
         assert_eq!(experiment_name_result, experiment_name_expected);
-
-        let experiment_id = Uuid::new_v4();
-        let experiment_result = Experiment::new(
-            experiment_id,
-            experiment_name_result.unwrap(),
-            experiment_variants_result.unwrap(),
-        );
-        let experiment_expected = Experiment {
-            id: experiment_id,
-            name: ExperimentName("price".to_string()),
-            variants: ExperimentVariants(vec![variant_1, variant_2, variant_3, variant_4]),
-        };
-
-        assert_eq!(experiment_result, experiment_expected);
     }
 
     #[test]

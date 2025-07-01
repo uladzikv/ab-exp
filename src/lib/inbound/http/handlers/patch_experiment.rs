@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -7,12 +7,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::domain::experiment::models::experiment::{
-    CreateExperimentError, DistributionSumError, ExperimentVariants, VariantData,
-    VariantDistribution, VariantDistributionInvalidError,
+    DistributionSumError, FinishExperimentError, VariantDistributionInvalidError,
 };
 use crate::domain::experiment::models::experiment::{
-    CreateExperimentRequest, ExperimentName, ExperimentNameEmptyError,
-    Variant as ExperimentVariant, VariantDataEmptyError,
+    ExperimentNameEmptyError, VariantDataEmptyError,
 };
 use crate::domain::experiment::ports::ExperimentService;
 use crate::inbound::http::AppState;
@@ -44,7 +42,8 @@ impl<T: Serialize + PartialEq> IntoResponse for ApiSuccess<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     InternalServerError(String),
-    UnprocessableEntity(String),
+    NotFound(String),
+    Conflict(String),
     Unauthorized,
     Forbidden,
 }
@@ -55,38 +54,20 @@ impl From<anyhow::Error> for ApiError {
     }
 }
 
-impl From<CreateExperimentError> for ApiError {
-    fn from(e: CreateExperimentError) -> Self {
+impl From<FinishExperimentError> for ApiError {
+    fn from(e: FinishExperimentError) -> Self {
         match e {
-            CreateExperimentError::Duplicate { name } => {
-                Self::UnprocessableEntity(format!("experiment with name {} already exists", name))
+            FinishExperimentError::NotFound { id } => {
+                Self::NotFound(format!("experiment with id {} not found", id))
             }
-            CreateExperimentError::Unknown(cause) => {
+            FinishExperimentError::Finished { id } => {
+                Self::Conflict(format!("experiment with id {} is already finished", id))
+            }
+            FinishExperimentError::Unknown(cause) => {
                 tracing::error!("{:?}\n{}", cause, cause.backtrace());
                 Self::InternalServerError("Internal server error".to_string())
             }
         }
-    }
-}
-
-impl From<ParseCreateExperimentHttpRequestError> for ApiError {
-    fn from(e: ParseCreateExperimentHttpRequestError) -> Self {
-        let message = match e {
-            ParseCreateExperimentHttpRequestError::Name(_) => {
-                "experiment name cannot be empty".to_string()
-            }
-            ParseCreateExperimentHttpRequestError::VariantData(_) => {
-                "variant data cannot be empty".to_string()
-            }
-            ParseCreateExperimentHttpRequestError::VariantDistribution(cause) => {
-                format!("{cause}")
-            }
-            ParseCreateExperimentHttpRequestError::DistributionSum(cause) => {
-                format!("{cause}")
-            }
-        };
-
-        Self::UnprocessableEntity(message)
     }
 }
 
@@ -105,8 +86,13 @@ impl IntoResponse for ApiError {
                 )
                     .into_response()
             }
-            UnprocessableEntity(message) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
+            NotFound(message) => (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponseBody::new_error(message)),
+            )
+                .into_response(),
+            Conflict(message) => (
+                StatusCode::CONFLICT,
                 Json(ApiResponseBody::new_error(message)),
             )
                 .into_response(),
@@ -154,11 +140,11 @@ pub struct CreateExperimentRequestBody {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CreateExperimentResponseData {
+pub struct PatchExperimentResponseData {
     id: String,
 }
 
-impl From<&Uuid> for CreateExperimentResponseData {
+impl From<&Uuid> for PatchExperimentResponseData {
     fn from(id: &Uuid) -> Self {
         Self { id: id.to_string() }
     }
@@ -171,9 +157,14 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct CreateExperimentHttpRequestBody {
-    name: String,
-    variants: Vec<Variant>,
+pub struct PatchExperimentHttpRequestBody {
+    status: ExperimentStatusHttpRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExperimentStatusHttpRequest {
+    Finished,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -188,33 +179,12 @@ enum ParseCreateExperimentHttpRequestError {
     DistributionSum(#[from] DistributionSumError),
 }
 
-impl CreateExperimentHttpRequestBody {
-    fn try_into_domain(
-        self,
-    ) -> Result<CreateExperimentRequest, ParseCreateExperimentHttpRequestError> {
-        let name = ExperimentName::new(&self.name)?;
-        let variants = &self
-            .variants
-            .iter()
-            .map(|v| {
-                let data = VariantData::new(&v.data)?;
-                let distribution = VariantDistribution::new(v.distribution)?;
-
-                Ok(ExperimentVariant::new(distribution, data))
-            })
-            .collect::<Result<Vec<ExperimentVariant>, ParseCreateExperimentHttpRequestError>>()?;
-
-        let validated_variants = ExperimentVariants::new(variants.to_owned())?;
-
-        Ok(CreateExperimentRequest::new(name, validated_variants))
-    }
-}
-
-pub async fn create_experiment<ES: ExperimentService>(
+pub async fn patch_experiment<ES: ExperimentService>(
     headers: HeaderMap,
+    Path(id): Path<Uuid>,
     State(state): State<AppState<ES>>,
-    Json(body): Json<CreateExperimentHttpRequestBody>,
-) -> Result<ApiSuccess<CreateExperimentResponseData>, ApiError> {
+    Json(_): Json<PatchExperimentHttpRequestBody>,
+) -> Result<ApiSuccess<PatchExperimentResponseData>, ApiError> {
     let auth_key = headers.get("Authorization").ok_or(ApiError::Unauthorized)?;
 
     match auth_key.to_str() {
@@ -226,11 +196,10 @@ pub async fn create_experiment<ES: ExperimentService>(
         Err(_) => return Err(ApiError::Unauthorized),
     }
 
-    let domain_req = body.try_into_domain()?;
     state
         .experiment_service
-        .create_experiment(&domain_req)
+        .finish_experiment(&id)
         .await
         .map_err(ApiError::from)
-        .map(|ref experiment| ApiSuccess::new(StatusCode::CREATED, experiment.into()))
+        .map(|ref experiment| ApiSuccess::new(StatusCode::OK, experiment.into()))
 }
